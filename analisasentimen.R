@@ -1,134 +1,169 @@
-library(tidytext)
-library(janeaustenr)
-library(dplyr)
-library(stringr)
-library(tidyr)
+library(e1071)
+library(twitteR)
+library(ROAuth)
+library(tm)
 library(ggplot2)
 library(wordcloud)
-library(reshape2)
+library(sentimentr)
+library(plyr)
+library(RTextTools)
+library(sentiment)
+library(Rstem)
 
-sentiments
-get_sentiments("afinn")
-get_sentiments("bing")
-get_sentiments("nrc")
-tidy_books <- austen_books() %>%
-  group_by(book) %>%
-  mutate(linenumber = row_number(),
-         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", 
-                                                 ignore_case = TRUE)))) %>%
-  ungroup() %>%
-  unnest_tokens(word, text)
+setup_twitter_oauth("uDx6SLppbPdpI8PufVVN2Nz3t", "0xfXEGNUnhXVEkUsUr57VfBWuAh2VL3aiybPEMdzZD88AnB180", "179920224-FGMjuDCuZvaTt5l9gxtIemkmswIRu20JI6KfVM4r","hdowZsIPqA46GX5J9SXEbIqG7zUpYMYWv0XKiT4kNGm5A")
+# harvest some tweets
+some_tweets = searchTwitter("Bukalapak", n=500, lang="en")
 
-nrc_joy <- get_sentiments("nrc") %>% 
-  filter(sentiment == "joy")
+# get the text
 
-tidy_books %>%
-  filter(book == "Emma") %>%
-  inner_join(nrc_joy) %>%
-  count(word, sort = TRUE)
+some_txt = sapply(some_tweets, function(x) x$getText())
 
-jane_austen_sentiment <- tidy_books %>%
-  inner_join(get_sentiments("bing")) %>%
-  count(book, index = linenumber %/% 80, sentiment) %>%
-  spread(sentiment, n, fill = 0) %>%
-  mutate(sentiment = positive - negative)
+# remove retweet entities
 
-ggplot(jane_austen_sentiment, aes(index, sentiment, fill = book)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~book, ncol = 2, scales = "free_x")
+some_txt = gsub("(RT|via)((?:\\b\\W*@\\w+)+)", "", some_txt)
 
-pride_prejudice <- tidy_books %>% 
-  filter(book == "Pride & Prejudice")
+# remove at people
 
-pride_prejudice
+some_txt = gsub("@\\w+", "", some_txt)
 
-afinn <- pride_prejudice %>% 
-  inner_join(get_sentiments("afinn")) %>% 
-  group_by(index = linenumber %/% 80) %>% 
-  summarise(sentiment = sum(score)) %>% 
-  mutate(method = "AFINN")
+# remove punctuation
 
-bing_and_nrc <- bind_rows(pride_prejudice %>% 
-                            inner_join(get_sentiments("bing")) %>%
-                            mutate(method = "Bing et al."),
-                          pride_prejudice %>% 
-                            inner_join(get_sentiments("nrc") %>% 
-                                         filter(sentiment %in% c("positive", 
-                                                                 "negative"))) %>%
-                            mutate(method = "NRC")) %>%
-  count(method, index = linenumber %/% 80, sentiment) %>%
-  spread(sentiment, n, fill = 0) %>%
-  mutate(sentiment = positive - negative)
+some_txt = gsub("[[:punct:]]", "", some_txt)
 
-bind_rows(afinn, 
-          bing_and_nrc) %>%
-  ggplot(aes(index, sentiment, fill = method)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~method, ncol = 1, scales = "free_y")
+# remove numbers
 
-get_sentiments("nrc") %>% 
-  filter(sentiment %in% c("positive", 
-                          "negative")) %>% 
-  count(sentiment)
-get_sentiments("bing") %>% 
-  count(sentiment)
-bing_word_counts <- tidy_books %>%
-  inner_join(get_sentiments("bing")) %>%
-  count(word, sentiment, sort = TRUE) %>%
-  ungroup()
+some_txt = gsub("[[:digit:]]", "", some_txt)
 
-bing_word_counts
-bing_word_counts %>%
-  group_by(sentiment) %>%
-  top_n(10) %>%
-  ungroup() %>%
-  mutate(word = reorder(word, n)) %>%
-  ggplot(aes(word, n, fill = sentiment)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~sentiment, scales = "free_y") +
-  labs(y = "Contribution to sentiment",
-       x = NULL) +
-  coord_flip()
-custom_stop_words <- bind_rows(data_frame(word = c("miss"), 
-                                          lexicon = c("custom")), 
-                               stop_words)
+# remove html links
 
-custom_stop_words
+some_txt = gsub("http\\w+", "", some_txt)
 
-tidy_books %>%
-  anti_join(stop_words) %>%
-  count(word) %>%
-  with(wordcloud(word, n, max.words = 100))
+# remove unnecessary spaces
 
-tidy_books %>%
-  inner_join(get_sentiments("bing")) %>%
-  count(word, sentiment, sort = TRUE) %>%
-  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
-  comparison.cloud(colors = c("gray20", "gray80"),
-                   max.words = 100)
-PandP_sentences <- data_frame(text = prideprejudice) %>% 
-  unnest_tokens(sentence, text, token = "sentences")
-austen_chapters <- austen_books() %>%
-  group_by(book) %>%
-  unnest_tokens(chapter, text, token = "regex", 
-                pattern = "Chapter|CHAPTER [\\dIVXLC]") %>%
-  ungroup()
+some_txt = gsub("[ \t]{2,}", "", some_txt)
 
-austen_chapters %>% 
-  group_by(book) %>% 
-  summarise(chapters = n())
-bingnegative <- get_sentiments("bing") %>% 
-  filter(sentiment == "negative")
+some_txt = gsub("^\\s+|\\s+$", "", some_txt)
 
-wordcounts <- tidy_books %>%
-  group_by(book, chapter) %>%
-  summarize(words = n())
-tidy_books %>%
-  semi_join(bingnegative) %>%
-  group_by(book, chapter) %>%
-  summarize(negativewords = n()) %>%
-  left_join(wordcounts, by = c("book", "chapter")) %>%
-  mutate(ratio = negativewords/words) %>%
-  filter(chapter != 0) %>%
-  top_n(1) %>%
-  ungroup()
+# define "tolower error handling" function
+
+try.error = function(x)
+  
+{
+  
+  # create missing value
+  
+  y = NA
+  
+  # tryCatch error
+  
+  try_error = tryCatch(tolower(x), error=function(e) e)
+  
+  # if not an error
+  
+  if (!inherits(try_error, "error"))
+    
+    y = tolower(x)
+  
+  # result
+  
+  return(y)
+  
+}
+
+# lower case using try.error with sapply
+
+some_txt = sapply(some_txt, try.error)
+
+# remove NAs in some_txt
+
+some_txt = some_txt[!is.na(some_txt)]
+
+names(some_txt) = NULL
+
+# classify emotion
+#library(sentiment)
+class_emo = classify_emotion(some_txt, algorithm="bayes", prior=1.0)
+
+# get emotion best fit
+
+emotion = class_emo[,7]
+
+# substitute NAâs by "unknown"
+
+emotion[is.na(emotion)] = "unknown"
+
+# classify polarity
+
+class_pol = classify_polarity(some_txt, algorithm="bayes")
+
+# get polarity best fit
+
+polarity = class_pol[,4]
+
+# data frame with results
+
+sent_df = data.frame(text=some_txt, emotion=emotion,
+                     
+                     polarity=polarity, stringsAsFactors=FALSE)
+
+# sort data frame
+
+sent_df = within(sent_df,
+                 
+                 emotion <- factor(emotion, levels=names(sort(table(emotion), decreasing=TRUE))))
+
+# plot distribution of emotions
+ggplot(sent_df, aes(x=emotion)) +
+  geom_bar(aes(y=..count.., fill=emotion)) +
+  scale_fill_brewer(palette="Dark2") +
+  labs(x="emotion categories", y="number of tweets")
+
+######
+ggplot(sent_df, aes(x=polarity)) +
+  
+  geom_bar(aes(y=..count.., fill=polarity)) +
+  
+  scale_fill_brewer(palette="RdGy") +
+  
+  labs(x="polarity categories", y="number of tweets")
+
+######
+
+emos = levels(factor(sent_df$emotion))
+
+nemo = length(emos)
+
+emo.docs = rep("", nemo)
+
+for (i in 1:nemo)
+  
+{
+  
+  tmp = some_txt[emotion == emos[i]]
+  
+  emo.docs[i] = paste(tmp, collapse=" ")
+  
+}
+
+
+
+####
+# remove stopwords
+
+emo.docs = removeWords(emo.docs, stopwords("english"))
+
+# create corpus
+
+corpus = Corpus(VectorSource(emo.docs))
+
+tdm = TermDocumentMatrix(corpus)
+
+tdm = as.matrix(tdm)
+
+colnames(tdm) = emos
+
+# comparison word cloud
+
+comparison.cloud(tdm, colors = brewer.pal(nemo, "Dark2"),
+                 
+scale = c(3,.5), random.order = FALSE, title.size = 1.5)
