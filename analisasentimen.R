@@ -1,12 +1,3 @@
-install.packages("tidytext")
-install.packages("janeaustenr")
-install.packages("dplyr")
-install.packages("stringr")
-install.packages("tidyr")
-install.packages("ggplot2")
-install.packages("wordcloud")
-install.packages("reshape2")
-
 library(tidytext)
 library(janeaustenr)
 library(dplyr)
