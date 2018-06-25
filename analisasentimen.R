@@ -12,7 +12,7 @@ library(Rstem)
 
 setup_twitter_oauth("uDx6SLppbPdpI8PufVVN2Nz3t", "0xfXEGNUnhXVEkUsUr57VfBWuAh2VL3aiybPEMdzZD88AnB180", "179920224-FGMjuDCuZvaTt5l9gxtIemkmswIRu20JI6KfVM4r","hdowZsIPqA46GX5J9SXEbIqG7zUpYMYWv0XKiT4kNGm5A")
 # harvest some tweets
-some_tweets = searchTwitter("Bukalapak", n=500, lang="en")
+some_tweets = searchTwitter("World Cup 2018", n=500, lang="en")
 
 # get the text
 
